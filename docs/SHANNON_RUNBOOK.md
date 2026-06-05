@@ -82,6 +82,10 @@ bytecode byte, while Ethereum charges `200`, so Foundry's default estimate can
 be too low for contract creation. The transaction only pays for gas actually
 used, not the full limit.
 
+The repository also enables Solidity's IR pipeline to reduce deployed bytecode.
+This is especially important for `ImpactEscrow`, where every saved byte reduces
+Somnia deployment gas.
+
 Copy the deployed contract address from the broadcast output into `.env`:
 
 ```dotenv
