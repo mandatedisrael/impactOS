@@ -37,6 +37,7 @@ No GitHub token is needed for public repositories.
 
 ```bash
 forge install foundry-rs/forge-std --no-git --shallow
+forge install OpenZeppelin/openzeppelin-contracts@v5.6.1 --no-git --shallow
 forge build
 forge test
 forge fmt --check
