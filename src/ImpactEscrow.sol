@@ -9,13 +9,14 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 import {
     GrantState,
     GrantView,
+    IImpactEscrow,
     MilestoneInput,
     MilestoneState,
     MilestoneView,
     VerificationVerdict
 } from "./interfaces/IImpactEscrow.sol";
 
-contract ImpactEscrow is Pausable, ReentrancyGuard {
+contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant MAX_MILESTONES = 20;
@@ -280,6 +281,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
 
     function startVerification(uint256 grantId, uint256 milestoneId)
         external
+        override
         whenNotPaused
         returns (uint32 attempt)
     {
@@ -308,7 +310,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
         uint256 milestoneId,
         uint32 attempt,
         VerificationVerdict verdict
-    ) external {
+    ) external override {
         _requireVerifierAdapter();
 
         Grant storage grant = _getGrant(grantId);
@@ -341,7 +343,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
         emit VerificationVerdictRecorded(grantId, milestoneId, attempt, verdict, resultingState);
     }
 
-    function getGrant(uint256 grantId) external view returns (GrantView memory) {
+    function getGrant(uint256 grantId) external view override returns (GrantView memory) {
         Grant storage grant = _getGrant(grantId);
         return GrantView({
             funder: grant.funder,
@@ -357,6 +359,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
     function getMilestone(uint256 grantId, uint256 milestoneId)
         external
         view
+        override
         returns (MilestoneView memory)
     {
         _getGrant(grantId);
