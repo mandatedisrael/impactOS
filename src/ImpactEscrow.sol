@@ -79,6 +79,13 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
     );
     event GrantCancelled(uint256 indexed grantId);
     event GrantFunded(uint256 indexed grantId, address indexed funder, uint256 amount);
+    event EvidenceSubmitted(
+        uint256 indexed grantId,
+        uint256 indexed milestoneId,
+        uint256 indexed pullRequestNumber,
+        bytes32 evidenceManifestHash,
+        string evidenceURI
+    );
 
     error InvalidAddress();
     error InvalidGrantee(address grantee);
@@ -92,8 +99,13 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
     error UnknownGrant(uint256 grantId);
     error UnknownMilestone(uint256 grantId, uint256 milestoneId);
     error OnlyFunder(address caller);
+    error OnlyGrantee(address caller);
     error InvalidGrantState(uint256 grantId, GrantState current);
+    error InvalidMilestoneState(uint256 grantId, uint256 milestoneId, MilestoneState current);
     error IncorrectTokenAmount(uint256 expected, uint256 received);
+    error SubmissionDeadlinePassed(uint256 grantId, uint256 milestoneId, uint64 deadline);
+    error InvalidPullRequestNumber();
+    error InvalidEvidenceManifest();
 
     constructor(IERC20 principalToken_, address guardian_, address resolver_) {
         if (
@@ -197,6 +209,38 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
         if (received != amount) revert IncorrectTokenAmount(amount, received);
 
         emit GrantFunded(grantId, msg.sender, amount);
+    }
+
+    function submitEvidence(
+        uint256 grantId,
+        uint256 milestoneId,
+        uint256 pullRequestNumber,
+        bytes32 evidenceManifestHash,
+        string calldata evidenceURI
+    ) external whenNotPaused {
+        Grant storage grant = _getGrant(grantId);
+        if (msg.sender != grant.grantee) revert OnlyGrantee(msg.sender);
+        if (grant.state != GrantState.Active) revert InvalidGrantState(grantId, grant.state);
+
+        Milestone storage milestone = _getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.Pending) {
+            revert InvalidMilestoneState(grantId, milestoneId, milestone.state);
+        }
+        if (block.timestamp > milestone.submissionDeadline) {
+            revert SubmissionDeadlinePassed(grantId, milestoneId, milestone.submissionDeadline);
+        }
+        if (pullRequestNumber == 0) revert InvalidPullRequestNumber();
+        if (evidenceManifestHash == bytes32(0)) revert InvalidEvidenceManifest();
+        _validateURI(milestoneId, evidenceURI);
+
+        milestone.pullRequestNumber = pullRequestNumber;
+        milestone.evidenceManifestHash = evidenceManifestHash;
+        milestone.evidenceURI = evidenceURI;
+        milestone.submittedAt = uint64(block.timestamp);
+
+        emit EvidenceSubmitted(
+            grantId, milestoneId, pullRequestNumber, evidenceManifestHash, evidenceURI
+        );
     }
 
     function getGrant(uint256 grantId) external view returns (GrantView memory) {
