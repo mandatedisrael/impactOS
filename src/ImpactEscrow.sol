@@ -61,6 +61,7 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
     address public verifierAdapter;
 
     uint256 public nextGrantId = 1;
+    uint256 public totalFundedPrincipal;
     uint256 public totalEscrowedPrincipal;
     uint256 public totalClaimableUSDC;
     uint256 public totalWithdrawnUSDC;
@@ -261,6 +262,7 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
 
         grant.state = GrantState.Active;
         grant.remainingPrincipal = amount;
+        totalFundedPrincipal += amount;
         totalEscrowedPrincipal += amount;
 
         principalToken.safeTransferFrom(msg.sender, address(this), amount);

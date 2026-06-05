@@ -35,6 +35,7 @@ contract ImpactEscrowFundingTest is Test {
 
         assertEq(usdc.balanceOf(FUNDER), 0);
         assertEq(usdc.balanceOf(address(escrow)), 1_000e6);
+        assertEq(escrow.totalFundedPrincipal(), 1_000e6);
         assertEq(escrow.totalEscrowedPrincipal(), 1_000e6);
         assertEq(uint256(escrow.getGrant(grantId).state), uint256(GrantState.Active));
         assertEq(escrow.getGrant(grantId).remainingPrincipal, 1_000e6);
@@ -60,6 +61,7 @@ contract ImpactEscrowFundingTest is Test {
         vm.stopPrank();
 
         assertEq(escrow.totalEscrowedPrincipal(), 3_500e6);
+        assertEq(escrow.totalFundedPrincipal(), 3_500e6);
         assertEq(usdc.balanceOf(address(escrow)), 3_500e6);
     }
 
