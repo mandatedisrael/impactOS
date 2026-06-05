@@ -117,11 +117,17 @@ submitting the request.
 ```bash
 forge script script/RequestGitHubVerification.s.sol \
   --rpc-url shannon \
+  --gas-estimate-multiplier 2000 \
   --broadcast
 ```
 
 Open the transaction in the Shannon explorer and record the
 `VerificationRequested` request ID.
+
+Use the request ID emitted by the onchain `VerificationRequested` event. Foundry
+simulates before broadcasting, and Somnia's global request counter may advance
+between those two steps, so the simulation's displayed return value is not
+authoritative.
 
 ## 5. Confirm the Agent Callback
 
