@@ -71,6 +71,12 @@ The first verifier is deployed on Somnia Shannon:
 - Transaction:
   [`0x1065...a51`](https://shannon-explorer.somnia.network/tx/0x106552557f01d4038a747da73c183b1cae9cce433ee992cd09eb415ae6b09a51)
 - Deployment record: [`deployments/shannon.json`](./deployments/shannon.json)
+- Live proof:
+  [`deployments/shannon-live-verification.json`](./deployments/shannon-live-verification.json)
+
+The live proof checks the same GitHub pull request twice. Somnia resolved it as
+`NotMerged` while open and `Merged` after merge, with two successful validator
+responses for each callback.
 
 ## Documentation
 

@@ -1,0 +1,31 @@
+{
+  "chainId": 50312,
+  "contract": "0xa163743e196D2328Ce619F6B911ED24B7F42c824",
+  "pullRequest": "https://github.com/mandatedisrael/impactOS/pull/1",
+  "proofs": [
+    {
+      "evidenceState": "open",
+      "requestId": 4841996,
+      "requestTransactionHash": "0xbf1a5a59c9a59345c443407b67235b9ad573cfa8f79d57b45d7410608bf9501f",
+      "requestBlock": 401279356,
+      "requestedAt": "2026-06-05T14:41:27.000Z",
+      "callbackTransactionHash": "0x1e9c4983c99e9fbe32eb0ed732c2bb9f89ba4564aaf0e31ff32a57c1985fb751",
+      "callbackBlock": 401279371,
+      "resolvedAt": "2026-06-05T14:41:29.000Z",
+      "result": "NotMerged",
+      "successfulResponses": 2
+    },
+    {
+      "evidenceState": "merged",
+      "requestId": 4842502,
+      "requestTransactionHash": "0x866a8db563015308a4546f98436be8e7c25e0d397fb296442430dbc7115622b0",
+      "requestBlock": 401281010,
+      "requestedAt": "2026-06-05T14:44:14.000Z",
+      "callbackTransactionHash": "0xf8c7be0a4c3f274be3c47feaba0af9ec5c02dbd5e773d32cfc4cf11bd5c188de",
+      "callbackBlock": 401281026,
+      "resolvedAt": "2026-06-05T14:44:15.000Z",
+      "result": "Merged",
+      "successfulResponses": 2
+    }
+  ]
+}
