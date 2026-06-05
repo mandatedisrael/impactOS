@@ -61,7 +61,10 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
 
     uint256 public nextGrantId = 1;
     uint256 public totalEscrowedPrincipal;
+    uint256 public totalClaimablePrincipal;
+    uint256 public totalWithdrawnPrincipal;
 
+    mapping(address account => uint256 amount) public claimablePrincipal;
     mapping(uint256 grantId => Grant grant) private _grants;
     mapping(uint256 grantId => mapping(uint256 milestoneId => Milestone milestone)) private
         _milestones;
@@ -101,6 +104,17 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
         VerificationVerdict verdict,
         MilestoneState resultingState
     );
+    event MilestoneMadeClaimable(
+        uint256 indexed grantId, uint256 indexed milestoneId, uint256 amount
+    );
+    event MilestoneClaimed(
+        uint256 indexed grantId,
+        uint256 indexed milestoneId,
+        address indexed grantee,
+        uint256 amount
+    );
+    event PrincipalWithdrawn(address indexed account, address indexed recipient, uint256 amount);
+    event GrantCompleted(uint256 indexed grantId);
 
     error InvalidAddress();
     error InvalidGrantee(address grantee);
@@ -128,6 +142,9 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
     error EvidenceNotSubmitted(uint256 grantId, uint256 milestoneId);
     error StaleVerificationAttempt(uint32 expected, uint32 received);
     error InvalidVerificationVerdict(VerificationVerdict verdict);
+    error ChallengePeriodActive(uint256 grantId, uint256 milestoneId, uint64 deadline);
+    error InvalidRecipient();
+    error NothingToWithdraw(address account);
 
     constructor(IERC20 principalToken_, address guardian_, address resolver_) {
         if (
@@ -343,6 +360,57 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
         emit VerificationVerdictRecorded(grantId, milestoneId, attempt, verdict, resultingState);
     }
 
+    function finalizeApproval(uint256 grantId, uint256 milestoneId) external {
+        Grant storage grant = _getGrant(grantId);
+        if (grant.state != GrantState.Active) revert InvalidGrantState(grantId, grant.state);
+
+        Milestone storage milestone = _getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.ProposedApproval) {
+            revert InvalidMilestoneState(grantId, milestoneId, milestone.state);
+        }
+        if (block.timestamp <= milestone.challengeDeadline) {
+            revert ChallengePeriodActive(grantId, milestoneId, milestone.challengeDeadline);
+        }
+
+        milestone.state = MilestoneState.Claimable;
+        emit MilestoneMadeClaimable(grantId, milestoneId, milestone.amount);
+    }
+
+    function claimMilestone(uint256 grantId, uint256 milestoneId) external {
+        Grant storage grant = _getGrant(grantId);
+        if (msg.sender != grant.grantee) revert OnlyGrantee(msg.sender);
+        if (grant.state != GrantState.Active) revert InvalidGrantState(grantId, grant.state);
+
+        Milestone storage milestone = _getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.Claimable) {
+            revert InvalidMilestoneState(grantId, milestoneId, milestone.state);
+        }
+
+        uint256 amount = milestone.amount;
+        milestone.state = MilestoneState.Paid;
+        grant.remainingPrincipal -= amount;
+        totalEscrowedPrincipal -= amount;
+        claimablePrincipal[grant.grantee] += amount;
+        totalClaimablePrincipal += amount;
+
+        emit MilestoneClaimed(grantId, milestoneId, grant.grantee, amount);
+        _completeGrantIfSettled(grantId, grant);
+    }
+
+    function withdrawPrincipal(address recipient) external nonReentrant {
+        if (recipient == address(0)) revert InvalidRecipient();
+
+        uint256 amount = claimablePrincipal[msg.sender];
+        if (amount == 0) revert NothingToWithdraw(msg.sender);
+
+        claimablePrincipal[msg.sender] = 0;
+        totalClaimablePrincipal -= amount;
+        totalWithdrawnPrincipal += amount;
+
+        principalToken.safeTransfer(recipient, amount);
+        emit PrincipalWithdrawn(msg.sender, recipient, amount);
+    }
+
     function getGrant(uint256 grantId) external view override returns (GrantView memory) {
         Grant storage grant = _getGrant(grantId);
         return GrantView({
@@ -411,6 +479,18 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
 
     function _requireVerifierAdapter() private view {
         if (msg.sender != verifierAdapter) revert OnlyVerifierAdapter(msg.sender);
+    }
+
+    function _completeGrantIfSettled(uint256 grantId, Grant storage grant) private {
+        if (grant.remainingPrincipal != 0) return;
+
+        for (uint256 milestoneId = 1; milestoneId <= grant.milestoneCount; ++milestoneId) {
+            MilestoneState state = _milestones[grantId][milestoneId].state;
+            if (state != MilestoneState.Paid && state != MilestoneState.Refunded) return;
+        }
+
+        grant.state = GrantState.Completed;
+        emit GrantCompleted(grantId);
     }
 
     function _validateRepositoryPart(uint256 milestoneId, string calldata value) private pure {
