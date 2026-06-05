@@ -315,6 +315,16 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
         emit VerifierAdapterConfigured(verifierAdapter_);
     }
 
+    function pause() external {
+        if (msg.sender != guardian) revert OnlyGuardian(msg.sender);
+        _pause();
+    }
+
+    function unpause() external {
+        if (msg.sender != guardian) revert OnlyGuardian(msg.sender);
+        _unpause();
+    }
+
     function startVerification(uint256 grantId, uint256 milestoneId)
         external
         override
