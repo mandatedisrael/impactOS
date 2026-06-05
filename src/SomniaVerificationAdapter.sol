@@ -8,6 +8,7 @@ import {
     GrantState,
     GrantView,
     IImpactEscrow,
+    MilestoneState,
     MilestoneView,
     VerificationVerdict
 } from "./interfaces/IImpactEscrow.sol";
@@ -30,6 +31,7 @@ contract SomniaVerificationAdapter is ISomniaAgentCallback, ReentrancyGuard {
 
     IImpactEscrow public immutable escrow;
     ISomniaAgents public immutable platform;
+    address public immutable rebateAllocator;
 
     uint256 public unallocatedRebates;
 
@@ -51,6 +53,15 @@ contract SomniaVerificationAdapter is ISomniaAgentCallback, ReentrancyGuard {
         uint256 indexed requestId, VerificationVerdict verdict, uint256 successfulResponses
     );
     event UnallocatedRebateReceived(address indexed sender, uint256 amount);
+    event UnallocatedRebateAssigned(
+        uint256 indexed grantId, uint256 indexed milestoneId, uint256 amount
+    );
+    event VerificationReserveWithdrawn(
+        uint256 indexed grantId,
+        uint256 indexed milestoneId,
+        address indexed recipient,
+        uint256 amount
+    );
 
     error InvalidAddress();
     error OnlyFunder(address caller);
@@ -61,14 +72,23 @@ contract SomniaVerificationAdapter is ISomniaAgentCallback, ReentrancyGuard {
     error UnknownRequest(uint256 requestId);
     error RequestAlreadyConsumed(uint256 requestId);
     error InvalidCallbackDetails(uint256 requestId);
+    error OnlyRebateAllocator(address caller);
+    error InsufficientUnallocatedRebate(uint256 required, uint256 available);
+    error VerificationReserveStillLocked(uint256 grantId, uint256 milestoneId, MilestoneState state);
+    error EmptyVerificationReserve(uint256 grantId, uint256 milestoneId);
+    error NativeTransferFailed(address recipient, uint256 amount);
 
-    constructor(IImpactEscrow escrow_, ISomniaAgents platform_) {
-        if (address(escrow_) == address(0) || address(platform_) == address(0)) {
+    constructor(IImpactEscrow escrow_, ISomniaAgents platform_, address rebateAllocator_) {
+        if (
+            address(escrow_) == address(0) || address(platform_) == address(0)
+                || rebateAllocator_ == address(0)
+        ) {
             revert InvalidAddress();
         }
 
         escrow = escrow_;
         platform = platform_;
+        rebateAllocator = rebateAllocator_;
     }
 
     function quoteObjectiveRequestDeposit() public view returns (uint256) {
@@ -124,6 +144,46 @@ contract SomniaVerificationAdapter is ISomniaAgentCallback, ReentrancyGuard {
         });
 
         emit ObjectiveVerificationRequested(requestId, grantId, milestoneId, attempt, deposit);
+    }
+
+    function assignUnallocatedRebate(uint256 grantId, uint256 milestoneId, uint256 amount)
+        external
+    {
+        if (msg.sender != rebateAllocator) revert OnlyRebateAllocator(msg.sender);
+        uint256 available = unallocatedRebates;
+        if (amount == 0 || amount > available) {
+            revert InsufficientUnallocatedRebate(amount, available);
+        }
+
+        escrow.getMilestone(grantId, milestoneId);
+        unallocatedRebates = available - amount;
+        verificationReserve[grantId][milestoneId] += amount;
+
+        emit UnallocatedRebateAssigned(grantId, milestoneId, amount);
+    }
+
+    function withdrawVerificationReserve(
+        uint256 grantId,
+        uint256 milestoneId,
+        address payable recipient
+    ) external nonReentrant {
+        GrantView memory grant = escrow.getGrant(grantId);
+        if (msg.sender != grant.funder) revert OnlyFunder(msg.sender);
+        if (recipient == address(0)) revert NativeTransferFailed(recipient, 0);
+
+        MilestoneView memory milestone = escrow.getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.Paid && milestone.state != MilestoneState.Refunded) {
+            revert VerificationReserveStillLocked(grantId, milestoneId, milestone.state);
+        }
+
+        uint256 amount = verificationReserve[grantId][milestoneId];
+        if (amount == 0) revert EmptyVerificationReserve(grantId, milestoneId);
+
+        verificationReserve[grantId][milestoneId] = 0;
+        (bool success,) = recipient.call{ value: amount }("");
+        if (!success) revert NativeTransferFailed(recipient, amount);
+
+        emit VerificationReserveWithdrawn(grantId, milestoneId, recipient, amount);
     }
 
     function handleResponse(

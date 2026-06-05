@@ -30,7 +30,7 @@ contract SomniaVerificationAdapterCallbackTest is Test {
         usdc = new MockUSDC();
         agents = new MockSomniaAgents();
         escrow = new ImpactEscrow(usdc, GUARDIAN, RESOLVER);
-        adapter = new SomniaVerificationAdapter(escrow, agents);
+        adapter = new SomniaVerificationAdapter(escrow, agents, GUARDIAN);
 
         vm.prank(GUARDIAN);
         escrow.configureVerifierAdapter(address(adapter));
