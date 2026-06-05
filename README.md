@@ -62,6 +62,16 @@ The only owner-provided inputs needed now are:
 Follow the [Shannon verification runbook](./docs/SHANNON_RUNBOOK.md) to deploy
 and complete the acceptance checklist.
 
+## Shannon Deployment
+
+The first verifier is deployed on Somnia Shannon:
+
+- Contract:
+  [`0xa163...c824`](https://shannon-explorer.somnia.network/address/0xa163743e196D2328Ce619F6B911ED24B7F42c824)
+- Transaction:
+  [`0x1065...a51`](https://shannon-explorer.somnia.network/tx/0x106552557f01d4038a747da73c183b1cae9cce433ee992cd09eb415ae6b09a51)
+- Deployment record: [`deployments/shannon.json`](./deployments/shannon.json)
+
 ## Documentation
 
 - [Production build plan](./IMPACTOS_BUILD_PLAN.md)

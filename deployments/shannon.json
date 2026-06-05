@@ -1,0 +1,15 @@
+{
+  "chainId": 50312,
+  "network": "Somnia Shannon",
+  "deployedAt": "2026-06-05T14:36:13.000Z",
+  "blockNumber": 401276231,
+  "contracts": {
+    "GitHubPullRequestVerifier": {
+      "address": "0xa163743e196D2328Ce619F6B911ED24B7F42c824",
+      "transactionHash": "0x106552557f01d4038a747da73c183b1cae9cce433ee992cd09eb415ae6b09a51",
+      "administrator": "0xB3AD3a10d187cbc4ca3e8c3EDED62F8286F8e16E",
+      "somniaAgentsPlatform": "0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776",
+      "gasUsed": 21540710
+    }
+  }
+}
