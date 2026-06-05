@@ -73,8 +73,14 @@ All checks must pass before broadcasting.
 ```bash
 forge script script/DeployGitHubPullRequestVerifier.s.sol \
   --rpc-url shannon \
+  --gas-estimate-multiplier 1800 \
   --broadcast
 ```
+
+The multiplier is intentionally high. Somnia charges `3,125` gas per deployed
+bytecode byte, while Ethereum charges `200`, so Foundry's default estimate can
+be too low for contract creation. The transaction only pays for gas actually
+used, not the full limit.
 
 Copy the deployed contract address from the broadcast output into `.env`:
 
