@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -14,6 +15,8 @@ import {
 } from "./interfaces/IImpactEscrow.sol";
 
 contract ImpactEscrow is Pausable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     uint256 public constant MAX_MILESTONES = 20;
     uint256 public constant MAX_REPOSITORY_PART_LENGTH = 100;
     uint256 public constant MAX_URI_LENGTH = 256;
@@ -53,6 +56,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
     address public immutable resolver;
 
     uint256 public nextGrantId = 1;
+    uint256 public totalEscrowedPrincipal;
 
     mapping(uint256 grantId => Grant grant) private _grants;
     mapping(uint256 grantId => mapping(uint256 milestoneId => Milestone milestone)) private
@@ -74,6 +78,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
         uint64 challengePeriod
     );
     event GrantCancelled(uint256 indexed grantId);
+    event GrantFunded(uint256 indexed grantId, address indexed funder, uint256 amount);
 
     error InvalidAddress();
     error InvalidGrantee(address grantee);
@@ -88,6 +93,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
     error UnknownMilestone(uint256 grantId, uint256 milestoneId);
     error OnlyFunder(address caller);
     error InvalidGrantState(uint256 grantId, GrantState current);
+    error IncorrectTokenAmount(uint256 expected, uint256 received);
 
     constructor(IERC20 principalToken_, address guardian_, address resolver_) {
         if (
@@ -171,6 +177,26 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
 
         grant.state = GrantState.Cancelled;
         emit GrantCancelled(grantId);
+    }
+
+    function fundGrant(uint256 grantId) external whenNotPaused nonReentrant {
+        Grant storage grant = _getGrant(grantId);
+        if (msg.sender != grant.funder) revert OnlyFunder(msg.sender);
+        if (grant.state != GrantState.Created) revert InvalidGrantState(grantId, grant.state);
+
+        uint256 amount = grant.totalPrincipal;
+        uint256 balanceBefore = principalToken.balanceOf(address(this));
+
+        grant.state = GrantState.Active;
+        grant.remainingPrincipal = amount;
+        totalEscrowedPrincipal += amount;
+
+        principalToken.safeTransferFrom(msg.sender, address(this), amount);
+
+        uint256 received = principalToken.balanceOf(address(this)) - balanceBefore;
+        if (received != amount) revert IncorrectTokenAmount(amount, received);
+
+        emit GrantFunded(grantId, msg.sender, amount);
     }
 
     function getGrant(uint256 grantId) external view returns (GrantView memory) {
