@@ -64,6 +64,7 @@ struct MilestoneView {
     uint64 submittedAt;
     uint64 challengeDeadline;
     uint32 verificationAttempt;
+    VerificationVerdict verificationVerdict;
     uint256 pullRequestNumber;
     bytes32 evidenceManifestHash;
     string evidenceURI;

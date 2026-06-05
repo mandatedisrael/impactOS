@@ -11,7 +11,8 @@ import {
     GrantView,
     MilestoneInput,
     MilestoneState,
-    MilestoneView
+    MilestoneView,
+    VerificationVerdict
 } from "./interfaces/IImpactEscrow.sol";
 
 contract ImpactEscrow is Pausable, ReentrancyGuard {
@@ -46,6 +47,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
         uint64 submittedAt;
         uint64 challengeDeadline;
         uint32 verificationAttempt;
+        VerificationVerdict verificationVerdict;
         uint256 pullRequestNumber;
         bytes32 evidenceManifestHash;
         string evidenceURI;
@@ -54,6 +56,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
     IERC20 public immutable principalToken;
     address public immutable guardian;
     address public immutable resolver;
+    address public verifierAdapter;
 
     uint256 public nextGrantId = 1;
     uint256 public totalEscrowedPrincipal;
@@ -86,6 +89,17 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
         bytes32 evidenceManifestHash,
         string evidenceURI
     );
+    event VerifierAdapterConfigured(address indexed verifierAdapter);
+    event VerificationStarted(
+        uint256 indexed grantId, uint256 indexed milestoneId, uint32 indexed attempt
+    );
+    event VerificationVerdictRecorded(
+        uint256 indexed grantId,
+        uint256 indexed milestoneId,
+        uint32 indexed attempt,
+        VerificationVerdict verdict,
+        MilestoneState resultingState
+    );
 
     error InvalidAddress();
     error InvalidGrantee(address grantee);
@@ -100,12 +114,19 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
     error UnknownMilestone(uint256 grantId, uint256 milestoneId);
     error OnlyFunder(address caller);
     error OnlyGrantee(address caller);
+    error OnlyGuardian(address caller);
+    error OnlyVerifierAdapter(address caller);
     error InvalidGrantState(uint256 grantId, GrantState current);
     error InvalidMilestoneState(uint256 grantId, uint256 milestoneId, MilestoneState current);
     error IncorrectTokenAmount(uint256 expected, uint256 received);
     error SubmissionDeadlinePassed(uint256 grantId, uint256 milestoneId, uint64 deadline);
     error InvalidPullRequestNumber();
     error InvalidEvidenceManifest();
+    error InvalidVerifierAdapter(address verifierAdapter);
+    error VerifierAdapterAlreadyConfigured(address verifierAdapter);
+    error EvidenceNotSubmitted(uint256 grantId, uint256 milestoneId);
+    error StaleVerificationAttempt(uint32 expected, uint32 received);
+    error InvalidVerificationVerdict(VerificationVerdict verdict);
 
     constructor(IERC20 principalToken_, address guardian_, address resolver_) {
         if (
@@ -154,6 +175,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
                 submittedAt: 0,
                 challengeDeadline: 0,
                 verificationAttempt: 0,
+                verificationVerdict: VerificationVerdict.None,
                 pullRequestNumber: 0,
                 evidenceManifestHash: bytes32(0),
                 evidenceURI: ""
@@ -243,6 +265,82 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
         );
     }
 
+    function configureVerifierAdapter(address verifierAdapter_) external {
+        if (msg.sender != guardian) revert OnlyGuardian(msg.sender);
+        if (verifierAdapter_ == address(0)) {
+            revert InvalidVerifierAdapter(verifierAdapter_);
+        }
+        if (verifierAdapter != address(0)) {
+            revert VerifierAdapterAlreadyConfigured(verifierAdapter);
+        }
+
+        verifierAdapter = verifierAdapter_;
+        emit VerifierAdapterConfigured(verifierAdapter_);
+    }
+
+    function startVerification(uint256 grantId, uint256 milestoneId)
+        external
+        whenNotPaused
+        returns (uint32 attempt)
+    {
+        _requireVerifierAdapter();
+
+        Grant storage grant = _getGrant(grantId);
+        if (grant.state != GrantState.Active) revert InvalidGrantState(grantId, grant.state);
+
+        Milestone storage milestone = _getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.Pending) {
+            revert InvalidMilestoneState(grantId, milestoneId, milestone.state);
+        }
+        if (milestone.evidenceManifestHash == bytes32(0)) {
+            revert EvidenceNotSubmitted(grantId, milestoneId);
+        }
+
+        attempt = ++milestone.verificationAttempt;
+        milestone.state = MilestoneState.Verifying;
+        milestone.verificationVerdict = VerificationVerdict.None;
+
+        emit VerificationStarted(grantId, milestoneId, attempt);
+    }
+
+    function recordVerificationVerdict(
+        uint256 grantId,
+        uint256 milestoneId,
+        uint32 attempt,
+        VerificationVerdict verdict
+    ) external {
+        _requireVerifierAdapter();
+
+        Grant storage grant = _getGrant(grantId);
+        if (grant.state != GrantState.Active) revert InvalidGrantState(grantId, grant.state);
+
+        Milestone storage milestone = _getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.Verifying) {
+            revert InvalidMilestoneState(grantId, milestoneId, milestone.state);
+        }
+        if (attempt != milestone.verificationAttempt) {
+            revert StaleVerificationAttempt(milestone.verificationAttempt, attempt);
+        }
+
+        MilestoneState resultingState;
+        if (verdict == VerificationVerdict.Approved) {
+            resultingState = MilestoneState.ProposedApproval;
+            milestone.challengeDeadline = uint64(block.timestamp + milestone.challengePeriod);
+        } else if (
+            verdict == VerificationVerdict.ManualReview || verdict == VerificationVerdict.Failed
+                || verdict == VerificationVerdict.TimedOut
+        ) {
+            resultingState = MilestoneState.ManualReview;
+        } else {
+            revert InvalidVerificationVerdict(verdict);
+        }
+
+        milestone.verificationVerdict = verdict;
+        milestone.state = resultingState;
+
+        emit VerificationVerdictRecorded(grantId, milestoneId, attempt, verdict, resultingState);
+    }
+
     function getGrant(uint256 grantId) external view returns (GrantView memory) {
         Grant storage grant = _getGrant(grantId);
         return GrantView({
@@ -277,6 +375,7 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
             submittedAt: milestone.submittedAt,
             challengeDeadline: milestone.challengeDeadline,
             verificationAttempt: milestone.verificationAttempt,
+            verificationVerdict: milestone.verificationVerdict,
             pullRequestNumber: milestone.pullRequestNumber,
             evidenceManifestHash: milestone.evidenceManifestHash,
             evidenceURI: milestone.evidenceURI
@@ -305,6 +404,10 @@ contract ImpactEscrow is Pausable, ReentrancyGuard {
         _validateRepositoryPart(milestoneId, input.repositoryName);
         _validateRepositoryPart(milestoneId, input.expectedBaseBranch);
         _validateURI(milestoneId, input.acceptanceCriteriaURI);
+    }
+
+    function _requireVerifierAdapter() private view {
+        if (msg.sender != verifierAdapter) revert OnlyVerifierAdapter(msg.sender);
     }
 
     function _validateRepositoryPart(uint256 milestoneId, string calldata value) private pure {
