@@ -24,6 +24,7 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
     uint256 public constant MAX_URI_LENGTH = 256;
     uint64 public constant MIN_CHALLENGE_PERIOD = 1 hours;
     uint64 public constant MAX_CHALLENGE_PERIOD = 30 days;
+    uint256 public constant DISPUTE_BOND = 25e6;
 
     struct Grant {
         address funder;
@@ -63,6 +64,7 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
     uint256 public totalEscrowedPrincipal;
     uint256 public totalClaimablePrincipal;
     uint256 public totalWithdrawnPrincipal;
+    uint256 public totalDisputeBonds;
 
     mapping(address account => uint256 amount) public claimablePrincipal;
     mapping(uint256 grantId => Grant grant) private _grants;
@@ -121,6 +123,13 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
     );
     event PrincipalWithdrawn(address indexed account, address indexed recipient, uint256 amount);
     event GrantCompleted(uint256 indexed grantId);
+    event MilestoneChallenged(
+        uint256 indexed grantId, uint256 indexed milestoneId, address indexed funder, uint256 bond
+    );
+    event DisputeResolved(
+        uint256 indexed grantId, uint256 indexed milestoneId, bool approved, address bondRecipient
+    );
+    event ManualReviewResolved(uint256 indexed grantId, uint256 indexed milestoneId, bool approved);
 
     error InvalidAddress();
     error InvalidGrantee(address grantee);
@@ -153,6 +162,8 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
     error NothingToWithdraw(address account);
     error SubmissionDeadlineActive(uint256 grantId, uint256 milestoneId, uint64 deadline);
     error SubmittedMilestoneCannotExpire(uint256 grantId, uint256 milestoneId);
+    error OnlyResolver(address caller);
+    error ChallengePeriodElapsed(uint256 grantId, uint256 milestoneId, uint64 deadline);
 
     constructor(IERC20 principalToken_, address guardian_, address resolver_) {
         if (
@@ -457,6 +468,67 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
 
         emit MilestoneRefunded(grantId, milestoneId, grant.funder, amount);
         _completeGrantIfSettled(grantId, grant);
+    }
+
+    function challengeMilestone(uint256 grantId, uint256 milestoneId) external nonReentrant {
+        Grant storage grant = _getGrant(grantId);
+        if (msg.sender != grant.funder) revert OnlyFunder(msg.sender);
+        if (grant.state != GrantState.Active) revert InvalidGrantState(grantId, grant.state);
+
+        Milestone storage milestone = _getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.ProposedApproval) {
+            revert InvalidMilestoneState(grantId, milestoneId, milestone.state);
+        }
+        if (block.timestamp > milestone.challengeDeadline) {
+            revert ChallengePeriodElapsed(grantId, milestoneId, milestone.challengeDeadline);
+        }
+
+        uint256 balanceBefore = principalToken.balanceOf(address(this));
+        milestone.state = MilestoneState.Disputed;
+        totalDisputeBonds += DISPUTE_BOND;
+
+        principalToken.safeTransferFrom(msg.sender, address(this), DISPUTE_BOND);
+        uint256 received = principalToken.balanceOf(address(this)) - balanceBefore;
+        if (received != DISPUTE_BOND) {
+            revert IncorrectTokenAmount(DISPUTE_BOND, received);
+        }
+
+        emit MilestoneChallenged(grantId, milestoneId, msg.sender, DISPUTE_BOND);
+    }
+
+    function resolveDispute(uint256 grantId, uint256 milestoneId, bool approve) external {
+        if (msg.sender != resolver) revert OnlyResolver(msg.sender);
+
+        Grant storage grant = _getGrant(grantId);
+        if (grant.state != GrantState.Active) revert InvalidGrantState(grantId, grant.state);
+
+        Milestone storage milestone = _getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.Disputed) {
+            revert InvalidMilestoneState(grantId, milestoneId, milestone.state);
+        }
+
+        address bondRecipient = approve ? grant.grantee : grant.funder;
+        milestone.state = approve ? MilestoneState.Claimable : MilestoneState.Refundable;
+        totalDisputeBonds -= DISPUTE_BOND;
+        claimablePrincipal[bondRecipient] += DISPUTE_BOND;
+        totalClaimablePrincipal += DISPUTE_BOND;
+
+        emit DisputeResolved(grantId, milestoneId, approve, bondRecipient);
+    }
+
+    function resolveManualReview(uint256 grantId, uint256 milestoneId, bool approve) external {
+        if (msg.sender != resolver) revert OnlyResolver(msg.sender);
+
+        Grant storage grant = _getGrant(grantId);
+        if (grant.state != GrantState.Active) revert InvalidGrantState(grantId, grant.state);
+
+        Milestone storage milestone = _getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.ManualReview) {
+            revert InvalidMilestoneState(grantId, milestoneId, milestone.state);
+        }
+
+        milestone.state = approve ? MilestoneState.Claimable : MilestoneState.Refundable;
+        emit ManualReviewResolved(grantId, milestoneId, approve);
     }
 
     function getGrant(uint256 grantId) external view override returns (GrantView memory) {
