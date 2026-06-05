@@ -50,7 +50,7 @@ contract ImpactEscrowSettlementTest is Test {
 
         assertEq(uint256(escrow.getMilestone(grantId, 1).state), uint256(MilestoneState.Claimable));
         assertEq(escrow.totalEscrowedPrincipal(), 1_000e6);
-        assertEq(escrow.totalClaimablePrincipal(), 0);
+        assertEq(escrow.totalClaimableUSDC(), 0);
     }
 
     function testGranteeClaimsThenWithdrawsPrincipal() public {
@@ -63,8 +63,8 @@ contract ImpactEscrowSettlementTest is Test {
         assertEq(uint256(escrow.getGrant(grantId).state), uint256(GrantState.Completed));
         assertEq(escrow.getGrant(grantId).remainingPrincipal, 0);
         assertEq(escrow.totalEscrowedPrincipal(), 0);
-        assertEq(escrow.claimablePrincipal(GRANTEE), 1_000e6);
-        assertEq(escrow.totalClaimablePrincipal(), 1_000e6);
+        assertEq(escrow.claimableUSDC(GRANTEE), 1_000e6);
+        assertEq(escrow.totalClaimableUSDC(), 1_000e6);
         assertEq(usdc.balanceOf(address(escrow)), 1_000e6);
 
         vm.prank(GRANTEE);
@@ -72,9 +72,9 @@ contract ImpactEscrowSettlementTest is Test {
 
         assertEq(usdc.balanceOf(RECIPIENT), 1_000e6);
         assertEq(usdc.balanceOf(address(escrow)), 0);
-        assertEq(escrow.claimablePrincipal(GRANTEE), 0);
-        assertEq(escrow.totalClaimablePrincipal(), 0);
-        assertEq(escrow.totalWithdrawnPrincipal(), 1_000e6);
+        assertEq(escrow.claimableUSDC(GRANTEE), 0);
+        assertEq(escrow.totalClaimableUSDC(), 0);
+        assertEq(escrow.totalWithdrawnUSDC(), 1_000e6);
     }
 
     function testRejectsClaimByNonGranteeAndDuplicateClaim() public {

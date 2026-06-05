@@ -62,11 +62,12 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
 
     uint256 public nextGrantId = 1;
     uint256 public totalEscrowedPrincipal;
-    uint256 public totalClaimablePrincipal;
-    uint256 public totalWithdrawnPrincipal;
+    uint256 public totalClaimableUSDC;
+    uint256 public totalWithdrawnUSDC;
     uint256 public totalDisputeBonds;
+    uint256 public totalSettledPrincipal;
 
-    mapping(address account => uint256 amount) public claimablePrincipal;
+    mapping(address account => uint256 amount) public claimableUSDC;
     mapping(uint256 grantId => Grant grant) private _grants;
     mapping(uint256 grantId => mapping(uint256 milestoneId => Milestone milestone)) private
         _milestones;
@@ -419,8 +420,9 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
         milestone.state = MilestoneState.Paid;
         grant.remainingPrincipal -= amount;
         totalEscrowedPrincipal -= amount;
-        claimablePrincipal[grant.grantee] += amount;
-        totalClaimablePrincipal += amount;
+        totalSettledPrincipal += amount;
+        claimableUSDC[grant.grantee] += amount;
+        totalClaimableUSDC += amount;
 
         emit MilestoneClaimed(grantId, milestoneId, grant.grantee, amount);
         _completeGrantIfSettled(grantId, grant);
@@ -429,12 +431,12 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
     function withdrawPrincipal(address recipient) external nonReentrant {
         if (recipient == address(0)) revert InvalidRecipient();
 
-        uint256 amount = claimablePrincipal[msg.sender];
+        uint256 amount = claimableUSDC[msg.sender];
         if (amount == 0) revert NothingToWithdraw(msg.sender);
 
-        claimablePrincipal[msg.sender] = 0;
-        totalClaimablePrincipal -= amount;
-        totalWithdrawnPrincipal += amount;
+        claimableUSDC[msg.sender] = 0;
+        totalClaimableUSDC -= amount;
+        totalWithdrawnUSDC += amount;
 
         principalToken.safeTransfer(recipient, amount);
         emit PrincipalWithdrawn(msg.sender, recipient, amount);
@@ -473,8 +475,9 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
         milestone.state = MilestoneState.Refunded;
         grant.remainingPrincipal -= amount;
         totalEscrowedPrincipal -= amount;
-        claimablePrincipal[grant.funder] += amount;
-        totalClaimablePrincipal += amount;
+        totalSettledPrincipal += amount;
+        claimableUSDC[grant.funder] += amount;
+        totalClaimableUSDC += amount;
 
         emit MilestoneRefunded(grantId, milestoneId, grant.funder, amount);
         _completeGrantIfSettled(grantId, grant);
@@ -520,8 +523,8 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
         address bondRecipient = approve ? grant.grantee : grant.funder;
         milestone.state = approve ? MilestoneState.Claimable : MilestoneState.Refundable;
         totalDisputeBonds -= DISPUTE_BOND;
-        claimablePrincipal[bondRecipient] += DISPUTE_BOND;
-        totalClaimablePrincipal += DISPUTE_BOND;
+        claimableUSDC[bondRecipient] += DISPUTE_BOND;
+        totalClaimableUSDC += DISPUTE_BOND;
 
         emit DisputeResolved(grantId, milestoneId, approve, bondRecipient);
     }

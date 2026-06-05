@@ -64,13 +64,13 @@ contract ImpactEscrowRefundTest is Test {
         assertEq(uint256(escrow.getMilestone(grantId, 1).state), uint256(MilestoneState.Refunded));
         assertEq(uint256(escrow.getGrant(grantId).state), uint256(GrantState.Completed));
         assertEq(escrow.totalEscrowedPrincipal(), 0);
-        assertEq(escrow.claimablePrincipal(FUNDER), 1_000e6);
-        assertEq(escrow.totalClaimablePrincipal(), 1_000e6);
+        assertEq(escrow.claimableUSDC(FUNDER), 1_000e6);
+        assertEq(escrow.totalClaimableUSDC(), 1_000e6);
 
         vm.prank(FUNDER);
         escrow.withdrawPrincipal(RECIPIENT);
         assertEq(usdc.balanceOf(RECIPIENT), 1_000e6);
-        assertEq(escrow.totalWithdrawnPrincipal(), 1_000e6);
+        assertEq(escrow.totalWithdrawnUSDC(), 1_000e6);
     }
 
     function testRejectsRefundByNonFunderAndDuplicateRefund() public {

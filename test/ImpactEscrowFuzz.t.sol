@@ -63,8 +63,9 @@ contract ImpactEscrowFuzzTest is Test {
 
         assertEq(uint256(escrow.getGrant(grantId).state), uint256(GrantState.Completed));
         assertEq(escrow.totalEscrowedPrincipal(), 0);
-        assertEq(escrow.totalClaimablePrincipal(), amount);
-        assertEq(escrow.claimablePrincipal(beneficiary), amount);
+        assertEq(escrow.totalSettledPrincipal(), amount);
+        assertEq(escrow.totalClaimableUSDC(), amount);
+        assertEq(escrow.claimableUSDC(beneficiary), amount);
         assertEq(usdc.balanceOf(address(escrow)), amount);
 
         vm.prank(beneficiary);
@@ -72,8 +73,8 @@ contract ImpactEscrowFuzzTest is Test {
 
         assertEq(usdc.balanceOf(RECIPIENT), amount);
         assertEq(usdc.balanceOf(address(escrow)), 0);
-        assertEq(escrow.totalClaimablePrincipal(), 0);
-        assertEq(escrow.totalWithdrawnPrincipal(), amount);
+        assertEq(escrow.totalClaimableUSDC(), 0);
+        assertEq(escrow.totalWithdrawnUSDC(), amount);
     }
 
     function testFuzz_MultipleMilestonesSumWithoutAccountingDrift(

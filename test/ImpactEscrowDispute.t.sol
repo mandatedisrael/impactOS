@@ -78,11 +78,12 @@ contract ImpactEscrowDisputeTest is Test {
 
         assertEq(uint256(escrow.getMilestone(grantId, 1).state), uint256(MilestoneState.Claimable));
         assertEq(escrow.totalDisputeBonds(), 0);
-        assertEq(escrow.claimablePrincipal(GRANTEE), 25e6);
+        assertEq(escrow.claimableUSDC(GRANTEE), 25e6);
 
         vm.prank(GRANTEE);
         escrow.claimMilestone(grantId, 1);
-        assertEq(escrow.claimablePrincipal(GRANTEE), 1_025e6);
+        assertEq(escrow.claimableUSDC(GRANTEE), 1_025e6);
+        assertEq(escrow.totalSettledPrincipal(), 1_000e6);
 
         vm.prank(GRANTEE);
         escrow.withdrawPrincipal(GRANTEE);
@@ -96,11 +97,12 @@ contract ImpactEscrowDisputeTest is Test {
         escrow.resolveDispute(grantId, 1, false);
 
         assertEq(uint256(escrow.getMilestone(grantId, 1).state), uint256(MilestoneState.Refundable));
-        assertEq(escrow.claimablePrincipal(FUNDER), 25e6);
+        assertEq(escrow.claimableUSDC(FUNDER), 25e6);
 
         vm.prank(FUNDER);
         escrow.refundMilestone(grantId, 1);
-        assertEq(escrow.claimablePrincipal(FUNDER), 1_025e6);
+        assertEq(escrow.claimableUSDC(FUNDER), 1_025e6);
+        assertEq(escrow.totalSettledPrincipal(), 1_000e6);
 
         vm.prank(FUNDER);
         escrow.withdrawPrincipal(FUNDER);
@@ -143,7 +145,7 @@ contract ImpactEscrowDisputeTest is Test {
             uint256(MilestoneState.Refundable)
         );
 
-        assertEq(escrow.totalClaimablePrincipal(), 0);
+        assertEq(escrow.totalClaimableUSDC(), 0);
         assertEq(escrow.totalDisputeBonds(), 0);
     }
 
