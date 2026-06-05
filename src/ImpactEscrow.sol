@@ -113,6 +113,12 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
         address indexed grantee,
         uint256 amount
     );
+    event MilestoneMadeRefundable(
+        uint256 indexed grantId, uint256 indexed milestoneId, uint256 amount
+    );
+    event MilestoneRefunded(
+        uint256 indexed grantId, uint256 indexed milestoneId, address indexed funder, uint256 amount
+    );
     event PrincipalWithdrawn(address indexed account, address indexed recipient, uint256 amount);
     event GrantCompleted(uint256 indexed grantId);
 
@@ -145,6 +151,8 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
     error ChallengePeriodActive(uint256 grantId, uint256 milestoneId, uint64 deadline);
     error InvalidRecipient();
     error NothingToWithdraw(address account);
+    error SubmissionDeadlineActive(uint256 grantId, uint256 milestoneId, uint64 deadline);
+    error SubmittedMilestoneCannotExpire(uint256 grantId, uint256 milestoneId);
 
     constructor(IERC20 principalToken_, address guardian_, address resolver_) {
         if (
@@ -409,6 +417,46 @@ contract ImpactEscrow is IImpactEscrow, Pausable, ReentrancyGuard {
 
         principalToken.safeTransfer(recipient, amount);
         emit PrincipalWithdrawn(msg.sender, recipient, amount);
+    }
+
+    function markExpiredMilestoneRefundable(uint256 grantId, uint256 milestoneId) external {
+        Grant storage grant = _getGrant(grantId);
+        if (grant.state != GrantState.Active) revert InvalidGrantState(grantId, grant.state);
+
+        Milestone storage milestone = _getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.Pending) {
+            revert InvalidMilestoneState(grantId, milestoneId, milestone.state);
+        }
+        if (block.timestamp <= milestone.submissionDeadline) {
+            revert SubmissionDeadlineActive(grantId, milestoneId, milestone.submissionDeadline);
+        }
+        if (milestone.evidenceManifestHash != bytes32(0)) {
+            revert SubmittedMilestoneCannotExpire(grantId, milestoneId);
+        }
+
+        milestone.state = MilestoneState.Refundable;
+        emit MilestoneMadeRefundable(grantId, milestoneId, milestone.amount);
+    }
+
+    function refundMilestone(uint256 grantId, uint256 milestoneId) external {
+        Grant storage grant = _getGrant(grantId);
+        if (msg.sender != grant.funder) revert OnlyFunder(msg.sender);
+        if (grant.state != GrantState.Active) revert InvalidGrantState(grantId, grant.state);
+
+        Milestone storage milestone = _getMilestone(grantId, milestoneId);
+        if (milestone.state != MilestoneState.Refundable) {
+            revert InvalidMilestoneState(grantId, milestoneId, milestone.state);
+        }
+
+        uint256 amount = milestone.amount;
+        milestone.state = MilestoneState.Refunded;
+        grant.remainingPrincipal -= amount;
+        totalEscrowedPrincipal -= amount;
+        claimablePrincipal[grant.funder] += amount;
+        totalClaimablePrincipal += amount;
+
+        emit MilestoneRefunded(grantId, milestoneId, grant.funder, amount);
+        _completeGrantIfSettled(grantId, grant);
     }
 
     function getGrant(uint256 grantId) external view override returns (GrantView memory) {
